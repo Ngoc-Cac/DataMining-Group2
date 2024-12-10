@@ -1,8 +1,17 @@
 from math import ceil
 from copy import deepcopy
+from collections import Counter
+from itertools import chain, combinations
 
 from pandas import DataFrame
 
+from typing import Iterable
+
+
+def powerset(iterable: Iterable):
+    """powerset([1,2,3]) → (1,) (2,) (3,) (1,2) (1,3) (2,3)
+    Adapted from: https://docs.python.org/3/library/itertools.html#itertools-recipes"""
+    return chain.from_iterable(combinations(iterable, r) for r in range(1, len(iterable)))
 
 def _vertical_transform(df: DataFrame, item_col: str) -> tuple[DataFrame, str]:
     vert_df = df.groupby(item_col)\
@@ -26,7 +35,8 @@ def _find_common_prefix(itemset1: list, itemset2: list) -> list:
 def eclat(df: DataFrame, min_support: float, item_col: str, *,
           max_iter: int = 100_000) -> DataFrame:
     vert_df, transact_col = _vertical_transform(df, item_col)
-    minFreq = ceil(min_support * len(df[transact_col].unique()))
+    total_transactions = len(df[transact_col].unique())
+    minFreq = ceil(min_support * total_transactions)
 
     vert_df = vert_df[vert_df[transact_col].apply(len) >= minFreq]
     
@@ -34,7 +44,8 @@ def eclat(df: DataFrame, min_support: float, item_col: str, *,
     freq_itemset = []
     for item, transacts in vert_df.iterrows():
         equiv_classes[0].append(([item], transacts.iloc[0]))
-        freq_itemset.append(([item], len(transacts.iloc[0])))
+        freq_itemset.append(([item], len(transacts.iloc[0]),
+                             len(transacts.iloc[0]) / total_transactions))
 
     while equiv_classes and (max_iter := max_iter - 1):
         cur_class = equiv_classes.pop()
@@ -51,10 +62,39 @@ def eclat(df: DataFrame, min_support: float, item_col: str, *,
                 new_itemset = sorted(new_itemset, key=lambda item: len(vert_df.loc[item][transact_col]))
 
                 next_class.append((new_itemset, new_transacts))
-                freq_itemset.append((new_itemset, len(new_transacts)))
+                freq_itemset.append((new_itemset, len(new_transacts),
+                                     len(new_transacts) / total_transactions))
             
             if next_class: equiv_classes.append(next_class)
-    return DataFrame(freq_itemset, columns=['itemsets', 'frequencies'])
+    return DataFrame(freq_itemset, columns=['itemsets', 'frequencies', 'support'])
+
+def find_conf(itemsets: Iterable[list[str]],
+              frequent_df: DataFrame) -> DataFrame:
+    rules_df = []
+    rules = []
+    for itemset in itemsets:
+        for antecedent in powerset(itemset):
+            rules.append((antecedent, tuple(item for item in itemset if not item in antecedent)))
+    
+    for rule in rules:
+        rule_mask = frequent_df['itemsets'].apply(lambda lis: Counter(lis) == Counter(rule[0] + rule[1]))
+        try:
+            rule_freq = frequent_df[rule_mask]['frequencies'].values[0]
+            rule_sup = frequent_df[rule_mask]['support'].values[0]
+        except IndexError: raise ValueError(f'Frequent itemset {rule[0] + rule[1]} not found')
+
+        antecedent_mask = frequent_df['itemsets'].apply(lambda lis: Counter(lis) == Counter(rule[0]))
+        try: antecedent_freq = frequent_df[antecedent_mask]['frequencies'].values[0]
+        except IndexError: raise ValueError(f'Frequent itemset {rule[0]} not found')
+
+        consequent_mask = frequent_df['itemsets'].apply(lambda lis: Counter(lis) == Counter(rule[1]))
+        try: consequent_sup = frequent_df[consequent_mask]['support'].values[0]
+        except IndexError: raise ValueError(f'Frequent itemset {rule[1]} not found')
+
+        conf = rule_freq / antecedent_freq
+        rules_df.append((rule, rule_freq, rule_sup,
+                         conf, conf / consequent_sup))
+    return DataFrame(rules_df, columns=['rule', 'frequencies', 'support', 'confidence', 'lift'])
 
 if __name__ == "__main__":
     # freq itemsets:
