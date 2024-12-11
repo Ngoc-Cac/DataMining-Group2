@@ -68,8 +68,8 @@ def eclat(df: DataFrame, min_support: float, item_col: str, *,
             if next_class: equiv_classes.append(next_class)
     return DataFrame(freq_itemset, columns=['itemsets', 'frequencies', 'support'])
 
-def find_conf(itemsets: Iterable[list[str]],
-              frequent_df: DataFrame) -> DataFrame:
+def assoc_rules(itemsets: Iterable[list[str]],
+                frequent_df: DataFrame) -> DataFrame:
     rules_df = []
     rules = []
     for itemset in itemsets:
@@ -92,9 +92,9 @@ def find_conf(itemsets: Iterable[list[str]],
         except IndexError: raise ValueError(f'Frequent itemset {rule[1]} not found')
 
         conf = rule_freq / antecedent_freq
-        rules_df.append((rule, rule_freq, rule_sup,
+        rules_df.append((rule, rule_sup,
                          conf, conf / consequent_sup))
-    return DataFrame(rules_df, columns=['rule', 'frequencies', 'support', 'confidence', 'lift'])
+    return DataFrame(rules_df, columns=['rule', 'support', 'confidence', 'lift'])
 
 if __name__ == "__main__":
     # freq itemsets:
