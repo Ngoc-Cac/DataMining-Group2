@@ -33,7 +33,32 @@ def _find_common_prefix(itemset1: list, itemset2: list) -> list:
     else: return deepcopy(itemset1[:i])
 
 def eclat(df: DataFrame, min_support: float, item_col: str, *,
-          max_iter: int = 100_000) -> DataFrame:
+          max_iter: int | None = None) -> DataFrame:
+    """
+    ECLAT algorithm to find frequent itemsets with min_support threshold.
+    
+    The dataframe to pass in should have two columns representing the transaction ID
+    and the item (singular) in that transaction. If a transaction contains more than
+    one item, there should be as many rows as the number of items in such transaction,
+    with each row containing the corresponding item.
+
+    ---
+    ## Parameters:
+    df: DataFrame
+        Columns:
+            TransactionID: the ID of transaction, dtype: object
+            item: the item in corresponding transaction, dtype: object
+    min_support: float
+        The min_support threshold for an itemset to be considered frequent
+    item_col: str
+        The name of the colunn containing the item description.
+    max_iter: int | None
+        Maximum iterations, for cases where the search space is too large. By default\
+        this is None, meaning no max limit.
+
+    ## Returns:
+    returns a DataFrame containing the frequent itemset, its frequency count and support.
+    """
     vert_df, transact_col = _vertical_transform(df, item_col)
     total_transactions = len(df[transact_col].unique())
     minFreq = ceil(min_support * total_transactions)
@@ -47,6 +72,7 @@ def eclat(df: DataFrame, min_support: float, item_col: str, *,
         freq_itemset.append(([item], len(transacts.iloc[0]),
                              len(transacts.iloc[0]) / total_transactions))
 
+    if not max_iter: max_iter = 0
     while equiv_classes and (max_iter := max_iter - 1):
         cur_class = equiv_classes.pop()
 
@@ -70,6 +96,26 @@ def eclat(df: DataFrame, min_support: float, item_col: str, *,
 
 def assoc_rules(itemsets: Iterable[list[str]],
                 frequent_df: DataFrame) -> DataFrame:
+    """
+    Find every possible association rules from a collection of itemsets. A dataframe
+    of frequent itemsets must be given.
+
+    ## Parameters:
+    itemsets: Iterable[list[str]]
+        An iterable containing the itemsets to mine from. Every subset of these itemsets\
+        must be present in frequent_df.
+    frequent_df: DataFrame
+        Columns:
+            itemsets: iterable containing items, dtype: object
+            frequencies: the frequency count of itemset, dtype: int64
+            support: the support of itemset, dtype: int64
+    
+    ## Returns:
+    returns a DataFrame of rules, their support, confidence and lift
+
+    ## Raises:
+    raise IndexError if a subset of given itemset to mine does not exist in frequent_df
+    """
     rules_df = []
     rules = []
     for itemset in itemsets:
